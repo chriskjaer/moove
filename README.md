@@ -23,12 +23,14 @@ Use the installed app bundle, not `swift run Moove`, so permission is granted to
 
 ## Shortcuts
 
-- **Shift + Command + H**: left half of the current display.
-- **Shift + Command + J**: bottom half.
-- **Shift + Command + K**: top half.
-- **Shift + Command + L**: right half.
-- **Shift + Command + 1**: move to display 1 and fill it.
-- **Shift + Command + 2**: move to display 2 and fill it.
+The default modifiers are **Control + Command**. In the Moove menu, open **Shortcut Modifiers** to toggle Command, Control, Option and Shift. The selection applies immediately to all six movement shortcuts and is saved between launches. At least Command, Control or Option must remain selected to avoid intercepting ordinary typing. Select Command and Shift to restore the old bindings. The Quit shortcut is unchanged.
+
+- **Control + Command + H**: left half of the current display.
+- **Control + Command + J**: bottom half.
+- **Control + Command + K**: top half.
+- **Control + Command + L**: right half.
+- **Control + Command + 1**: move to display 1 and fill it.
+- **Control + Command + 2**: move to display 2 and fill it.
 
 Repeat the same directional shortcut to cycle **50% → 75% → 25% → 50%** of the usable display area, anchored to that edge. Switching edges or starting from an unmatched frame begins at 50%. The cycle recognizes the actual window frame (within 3 points), not a global counter, so changing windows or manually moving one does not carry a stale cycle. Apps that enforce sizes outside that tolerance may restart at 50% rather than cycle. Display-fill shortcuts do not cycle.
 
@@ -36,9 +38,9 @@ The gray menu rows are informational shortcut/status labels, not clickable contr
 
 Layouts use the usable display area, preserving the menu bar and Dock. Fill is a maximized window, not a separate macOS fullscreen Space. For windows spanning displays, the display with the greatest overlapping area is used.
 
-Display 1 is the primary/menu-bar display in macOS Display settings. The other displays are ordered left to right, then top to bottom. The menu shows their numbers and names; numbering is recalculated when monitors are connected or disconnected. With only one display, Command + Shift + 2 beeps and does nothing.
+Display 1 is the primary/menu-bar display in macOS Display settings. The other displays are ordered left to right, then top to bottom. The menu shows their numbers and names; numbering is recalculated when monitors are connected or disconnected. With only one display, Command + Control + 2 beeps and does nothing.
 
-The shortcuts use the physical H/J/K/L/1/2 keys on an ANSI keyboard layout. They override app-local bindings while Moove runs. If another global hotkey owner has already registered one, its registration failure appears in the menu. Quit other window managers or change conflicting bindings.
+The shortcuts use the physical H/J/K/L/1/2 keys on an ANSI keyboard layout. They override app-local bindings while Moove runs. If another global hotkey owner has already registered one, its registration failure appears in the menu. The selected modifiers remain saved even if some shortcuts conflict; there is no automatic rollback. Quit other window managers or choose a different modifier combination in Moove.
 
 ## Limitations
 
@@ -64,19 +66,23 @@ See [Native macOS development checklist](docs/native-development.md) for build/r
 
 ```sh
 swift run GeometryChecks
+swift run ShortcutChecks
 ./build.sh
 codesign --verify --strict dist/Moove.app
 ```
+
+Shortcut checks cover default and custom modifiers, preference persistence and invalid-value fallback, labels, and preservation of physical keys and actions. They do not exercise global hotkey delivery.
 
 The geometry checks run without XCTest (and therefore without full Xcode). They cover every half layout, displays above/below/left of the primary, menu/Dock insets, odd dimensions, greatest-overlap display selection, and unplugged-display recovery. AppKit and Accessibility both use logical points, avoiding per-display pixel-scale conversions.
 
 Manual acceptance checks after granting permission:
 
 1. Focus an ordinary resizable window and try all four directional shortcuts. Repeat each to check 50%, 75%, 25%, then 50%; switch directions to check that the new edge starts at 50%.
-2. Move it between two displays using Command + Shift + 1/2, checking display numbering and usable-area fill.
+2. Move it between two displays using Command + Control + 1/2, checking display numbering and usable-area fill.
 3. Repeat with displays arranged above/below each other and with different scaling settings.
 4. Check a minimum-size window, native fullscreen window, and disconnected second display; confirm the menu reports the limitation.
-5. Quit Moove and confirm the shortcuts are released.
+5. Change modifiers in **Shortcut Modifiers**. Confirm all six labels update, the old shortcuts are released, and the new shortcuts work. Quit/reopen and confirm the selection persists. Check Cmd+Shift as well as the Cmd+Ctrl default, verify conflicts appear in the menu, and confirm removing the last Command/Control/Option modifier is disabled.
+6. Quit Moove and confirm the shortcuts are released.
 
 Automated geometry checks are not proof that every third-party app honors Accessibility requests. Real window movement and multi-display behavior require the manual checks above.
 
