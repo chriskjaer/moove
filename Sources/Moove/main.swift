@@ -2,26 +2,14 @@ import AppKit
 import ApplicationServices
 import Carbon
 import WindowGeometry
+import MooveShortcuts
 
-struct Shortcut {
-    let key: UInt32
-    let label: String
-    let placement: Placement
-    let display: Int?
-}
-
-let shortcuts: [Shortcut] = [
-    Shortcut(key: UInt32(kVK_ANSI_H), label: "⇧⌘H   Left half", placement: .left, display: nil),
-    Shortcut(key: UInt32(kVK_ANSI_J), label: "⇧⌘J   Bottom half", placement: .bottom, display: nil),
-    Shortcut(key: UInt32(kVK_ANSI_K), label: "⇧⌘K   Top half", placement: .top, display: nil),
-    Shortcut(key: UInt32(kVK_ANSI_L), label: "⇧⌘L   Right half", placement: .right, display: nil),
-    Shortcut(key: UInt32(kVK_ANSI_1), label: "⇧⌘1   Fill display 1", placement: .fill, display: 0),
-    Shortcut(key: UInt32(kVK_ANSI_2), label: "⇧⌘2   Fill display 2", placement: .fill, display: 1)
-]
+let shortcuts = Shortcut.all
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var hotkeys: [EventHotKeyRef] = []
+    private var modifiers = ShortcutSettings.load()
     private var handler: EventHandlerRef?
     private var registrationFailures: [String] = []
     private var lastResult = "Ready"
@@ -67,7 +55,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         addLabel(lastResult)
         for failure in registrationFailures { addLabel(failure) }
         menu.addItem(.separator())
-        for shortcut in shortcuts { addLabel(shortcut.label) }
+        for shortcut in shortcuts { addLabel(shortcut.label(modifiers: modifiers)) }
+        let settings = NSMenuItem(title: "Shortcut Modifiers", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for (index, choice) in ShortcutModifiers.choices.enumerated() {
+            let item = submenu.addItem(withTitle: choice.name, action: #selector(toggleModifier(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.state = modifiers.contains(choice.value) ? .on : .off
+            item.isEnabled = modifiers.symmetricDifference(choice.value).isValid
+        }
+        settings.submenu = submenu
+        menu.addItem(settings)
         addLabel("Repeat a side: 50% → 75% → 25%")
         menu.addItem(.separator())
         for (index, screen) in screens.enumerated() {
@@ -86,6 +86,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu?.addItem(item)
     }
 
+    @objc private func toggleModifier(_ sender: NSMenuItem) {
+        guard ShortcutModifiers.choices.indices.contains(sender.tag) else { return }
+        let updated = modifiers.symmetricDifference(ShortcutModifiers.choices[sender.tag].value)
+        guard updated.isValid else { return }
+        modifiers = updated
+        ShortcutSettings.save(modifiers)
+        registerShortcuts()
+        lastResult = registrationFailures.isEmpty ? "Shortcuts updated" : "Some shortcuts are unavailable"
+        record("Modifiers changed: \(modifiers.symbols). Registered shortcuts: \(hotkeys.count)/\(shortcuts.count).")
+        for failure in registrationFailures { record(failure) }
+        rebuildMenu()
+    }
+
     @objc private func quitApp() { NSApp.terminate(nil) }
 
     @objc private func requestPermission() {
@@ -97,29 +110,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func registerShortcuts() {
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let result = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
-            guard let event, let context else { return OSStatus(eventNotHandledErr) }
-            var id = EventHotKeyID()
-            let result = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
-            guard result == noErr else { return result }
-            let app = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
-            guard id.signature == app.signature, id.id > 0, Int(id.id) <= shortcuts.count else {
-                return OSStatus(eventNotHandledErr)
+        hotkeys.forEach { UnregisterEventHotKey($0) }
+        hotkeys.removeAll()
+        registrationFailures.removeAll()
+        // Reuse one handler when changing modifiers, avoiding duplicate delivery.
+        if handler == nil {
+            var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            let result = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+                guard let event, let context else { return OSStatus(eventNotHandledErr) }
+                var id = EventHotKeyID()
+                let result = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
+                guard result == noErr else { return result }
+                let app = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
+                guard id.signature == app.signature, id.id > 0, Int(id.id) <= shortcuts.count else {
+                    return OSStatus(eventNotHandledErr)
+                }
+                app.perform(shortcuts[Int(id.id) - 1])
+                return noErr
+            }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handler)
+            guard result == noErr else {
+                registrationFailures.append("Hotkey handler failed: \(result)")
+                return
             }
-            app.perform(shortcuts[Int(id.id) - 1])
-            return noErr
-        }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handler)
-        guard result == noErr else {
-            registrationFailures.append("Hotkey handler failed: \(result)")
-            return
         }
         for (index, shortcut) in shortcuts.enumerated() {
             var ref: EventHotKeyRef?
             let id = EventHotKeyID(signature: signature, id: UInt32(index + 1))
-            let status = RegisterEventHotKey(shortcut.key, UInt32(cmdKey | shiftKey), id, GetApplicationEventTarget(), 0, &ref)
+            let status = RegisterEventHotKey(shortcut.key, modifiers.rawValue, id, GetApplicationEventTarget(), 0, &ref)
             if status == noErr, let ref { hotkeys.append(ref) }
-            else { registrationFailures.append("Unavailable: \(shortcut.label) (\(status))") }
+            else { registrationFailures.append("Unavailable: \(shortcut.label(modifiers: modifiers)) (\(status))") }
         }
     }
 
@@ -154,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func perform(_ shortcut: Shortcut) {
-        record("Received shortcut: \(shortcut.label). Accessibility trusted: \(AXIsProcessTrusted()).")
+        record("Received shortcut: \(shortcut.label(modifiers: modifiers)). Accessibility trusted: \(AXIsProcessTrusted()).")
         guard AXIsProcessTrusted() else { fail("Grant Accessibility permission from the Moove menu."); return }
         guard let app = NSWorkspace.shared.frontmostApplication else { fail("No active app."); return }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)

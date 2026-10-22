@@ -7,7 +7,9 @@ let package = Package(
     products: [.executable(name: "Moove", targets: ["Moove"])],
     targets: [
         .target(name: "WindowGeometry"),
-        .executableTarget(name: "Moove", dependencies: ["WindowGeometry"]),
+        .target(name: "MooveShortcuts", dependencies: ["WindowGeometry"]),
+        .executableTarget(name: "Moove", dependencies: ["WindowGeometry", "MooveShortcuts"]),
+        .executableTarget(name: "ShortcutChecks", dependencies: ["MooveShortcuts"], path: "Tests/ShortcutChecks"),
         .executableTarget(name: "GeometryChecks", dependencies: ["WindowGeometry"], path: "Tests/GeometryChecks")
     ]
 )

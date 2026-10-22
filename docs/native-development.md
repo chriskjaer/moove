@@ -8,6 +8,7 @@ Run from the project root:
 
 ```sh
 swift run GeometryChecks
+swift run ShortcutChecks
 ./build.sh
 codesign --verify --strict dist/Moove.app
 plutil -lint dist/Moove.app/Contents/Info.plist
@@ -15,7 +16,7 @@ plutil -lint dist/Moove.app/Contents/Info.plist
 
 `swift build` compiles the executable; `build.sh` also generates the icon, copies bundle resources and metadata, signs the assembled bundle, updates its modification time, and registers it with Launch Services. Source edits alone do not update a running app. Incremental Swift builds may correctly reuse an unchanged executable while icon resources are regenerated.
 
-This checkout supports checks without XCTest through `GeometryChecks`. Do not promise `swift test` works with Command Line Tools alone: XCTest was unavailable in the local toolchain. Geometry checks cover owned placement logic, not global hotkeys, Accessibility authorization, or third-party window behavior.
+This checkout supports checks without XCTest through `GeometryChecks` and `ShortcutChecks`. Shortcut checks cover modifier configuration, saved preferences, labels and action mappings. Actual re-registration, conflict reporting and release of previous hotkeys must also be checked in the running app by changing **Shortcut Modifiers**, exercising old/new combinations, and restarting to verify persistence. Do not promise `swift test` works with Command Line Tools alone: XCTest was unavailable in the local toolchain. Geometry checks cover owned placement logic, not global hotkeys, Accessibility authorization, or third-party window behavior.
 
 ## Run one exact bundle
 
